@@ -19,6 +19,16 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.json"
 EXAMPLE_CONFIG_PATH = Path(__file__).parent / "config.example.json"
 
 
+def ensure_file_path(path: Path, label: str):
+    """Validate that a path points to a regular file when it exists."""
+    if path.exists() and path.is_dir():
+        raise IsADirectoryError(
+            f"{label} must be a file, but got directory: {path}\n"
+            "This is usually caused by Docker bind-mounting a non-existing file path.\n"
+            f"Fix it on host: rm -rf {path.name} && touch {path.name}"
+        )
+
+
 @dataclass
 class Config:
     """服务器配置"""
@@ -47,6 +57,7 @@ class Config:
 
         if not config_path.exists():
             raise FileNotFoundError(f"配置文件不存在: {config_path}")
+        ensure_file_path(config_path, "Config path")
 
         with open(config_path, 'r', encoding='utf-8') as f:
             data = json.load(f)

@@ -196,6 +196,39 @@ docker logs -f nmap-mcp-server
 docker rm -f nmap-mcp-server
 ```
 
+### 常见挂载错误排查
+
+若日志出现以下错误：
+
+```text
+IsADirectoryError: [Errno 21] Is a directory: '/app/config.json'
+```
+
+通常表示宿主机上的 `config.json` 不存在，Docker 自动创建了同名目录并挂载进容器。
+
+可执行以下命令修复（在宿主机的运行目录）：
+
+```bash
+docker rm -f nmap-mcp-server
+rm -rf config.json
+test -d nmap_tasks.db && rm -rf nmap_tasks.db
+cat > config.json <<'EOF'
+{
+  "host": "0.0.0.0",
+  "port": 3004,
+  "path": "/mcp",
+  "token": "replace_with_your_token",
+  "sync_timeout": 30,
+  "max_concurrent_tasks": 10,
+  "db_path": "nmap_tasks.db",
+  "nmap_path": "nmap"
+}
+EOF
+touch nmap_tasks.db
+```
+
+然后重新执行 `docker run ...` 启动容器。
+
 ## GitHub Actions（Docker Publish）
 
 仓库已新增 `.github/workflows/docker-publish.yml`，触发条件如下：
