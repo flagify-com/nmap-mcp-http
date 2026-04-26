@@ -3,6 +3,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-flagify--com%2Fnmap--mcp--http-blue?logo=github)](https://github.com/flagify-com/nmap-mcp-http)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Docker Publish](../../actions/workflows/docker-publish.yml/badge.svg)](../../actions/workflows/docker-publish.yml)
 
 基于 [FastMCP](https://github.com/jlowin/fastmcp) 框架开发的 Nmap 扫描服务，通过 Streamable HTTP 协议提供远程调用能力，支持 MCP (Model Context Protocol) 客户端集成。
 
@@ -104,6 +105,159 @@ vim config.json  # 修改 token 等配置
 | `max_concurrent_tasks` | 最大并发任务数 | `10` |
 | `db_path` | SQLite 数据库路径 | `nmap_tasks.db` |
 | `nmap_path` | Nmap 可执行文件路径 | `nmap` |
+
+## Docker 部署
+
+项目已提供 `Dockerfile` 与 `docker-compose.yml`，可直接容器化运行。
+
+### 方式 A：基于源码构建运行（docker compose）
+
+### 1) 准备运行文件
+
+```bash
+# 初始化配置文件（请修改 token）
+cp config.example.json config.json
+
+# 预创建 SQLite 文件，避免被 Docker 识别成目录
+touch nmap_tasks.db
+```
+
+### 2) 构建并启动
+
+```bash
+docker compose up -d --build
+```
+
+### 3) 查看日志
+
+```bash
+docker compose logs -f nmap-mcp-server
+```
+
+### 4) 停止服务
+
+```bash
+docker compose down
+```
+
+### 方式 B：直接拉取 GHCR 镜像运行（docker pull + docker run）
+
+适用于不想拉源码、只想直接运行容器的场景。
+
+1) 准备本地目录和配置文件：
+
+```bash
+mkdir -p nmap-mcp-data
+cd nmap-mcp-data
+
+cat > config.json <<'EOF'
+{
+  "host": "0.0.0.0",
+  "port": 3004,
+  "path": "/mcp",
+  "token": "replace_with_your_token",
+  "sync_timeout": 30,
+  "max_concurrent_tasks": 10,
+  "db_path": "nmap_tasks.db",
+  "nmap_path": "nmap"
+}
+EOF
+
+touch nmap_tasks.db
+```
+
+2) 拉取镜像（优先组织仓库）：
+
+```bash
+docker pull ghcr.io/flagify-com/nmap-mcp-http:latest
+# fallback:
+# docker pull ghcr.io/wzfukui/nmap-mcp-http:latest
+```
+
+3) 启动容器：
+
+```bash
+docker run -d \
+  --name nmap-mcp-server \
+  -p 3004:3004 \
+  -v "$(pwd)/config.json:/app/config.json:ro" \
+  -v "$(pwd)/nmap_tasks.db:/app/nmap_tasks.db" \
+  --restart always \
+  ghcr.io/flagify-com/nmap-mcp-http:latest
+```
+
+4) 查看日志：
+
+```bash
+docker logs -f nmap-mcp-server
+```
+
+5) 停止并删除容器：
+
+```bash
+docker rm -f nmap-mcp-server
+```
+
+### 常见挂载错误排查
+
+若日志出现以下错误：
+
+```text
+IsADirectoryError: [Errno 21] Is a directory: '/app/config.json'
+```
+
+通常表示宿主机上的 `config.json` 不存在，Docker 自动创建了同名目录并挂载进容器。
+
+可执行以下命令修复（在宿主机的运行目录）：
+
+```bash
+docker rm -f nmap-mcp-server
+rm -rf config.json
+test -d nmap_tasks.db && rm -rf nmap_tasks.db
+cat > config.json <<'EOF'
+{
+  "host": "0.0.0.0",
+  "port": 3004,
+  "path": "/mcp",
+  "token": "replace_with_your_token",
+  "sync_timeout": 30,
+  "max_concurrent_tasks": 10,
+  "db_path": "nmap_tasks.db",
+  "nmap_path": "nmap"
+}
+EOF
+touch nmap_tasks.db
+```
+
+然后重新执行 `docker run ...` 启动容器。
+
+## GitHub Actions（Docker Publish）
+
+仓库已新增 `.github/workflows/docker-publish.yml`，触发条件如下：
+
+- push 到 `main`
+- push `v*` tag（例如 `v1.0.0`）
+- 手动触发 `workflow_dispatch`
+
+Workflow 会自动：
+
+1. 登录 GHCR（`ghcr.io`）
+2. 构建 Docker 镜像
+3. 推送镜像到 `ghcr.io/<owner>/<repo>`
+
+示例镜像地址：
+
+```text
+# preferred (org):
+ghcr.io/flagify-com/nmap-mcp-http:latest
+ghcr.io/flagify-com/nmap-mcp-http:main
+ghcr.io/flagify-com/nmap-mcp-http:sha-<commit>
+
+# fallback (personal):
+ghcr.io/wzfukui/nmap-mcp-http:latest
+ghcr.io/wzfukui/nmap-mcp-http:main
+ghcr.io/wzfukui/nmap-mcp-http:sha-<commit>
+```
 
 ## 使用方法
 
@@ -322,6 +476,10 @@ python test_client.py your_secret_token_here
 
 ```
 nmap-mcp-http/
+├── .github/workflows/
+│   └── docker-publish.yml # GitHub Actions Docker 构建与发布
+├── .dockerignore      # Docker 构建忽略规则
+├── Dockerfile         # 容器镜像构建文件
 ├── server.py          # MCP 服务器主程序
 ├── config.py          # 配置管理模块
 ├── models.py          # 数据模型定义
@@ -332,6 +490,7 @@ nmap-mcp-http/
 ├── config.json        # 配置文件（需自行创建）
 ├── config.example.json # 配置文件模板
 ├── requirements.txt   # Python 依赖
+├── docker-compose.yml # 本地容器编排
 ├── VERSION            # 版本号
 ├── LICENSE            # MIT 开源许可证
 ├── README.md          # 项目说明
